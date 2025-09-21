@@ -1,13 +1,48 @@
 from django.shortcuts import render
 from django.db import models
+from django.contrib.auth.models import User
+from django.conf import settings
 
 # Create your views here.
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from .models import Law, Complaint, DocumentTemplate, GeneratedDocument
+from .models import Law, Complaint, DocumentTemplate, GeneratedDocument, Story, Reward
+import openai
 
 def generate_ai_answer(question):
-    return f"You asked: '{question}'. Here's a placeholder answer."
+    """
+    Generate an AI answer using OpenAI API for women's rights related questions
+    """
+    try:
+        # Set up OpenAI client
+        client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+
+        # Create a system message for context
+        system_message = """You are a helpful AI assistant specializing in women's rights and legal advice.
+        You provide accurate, supportive, and informative responses about women's rights, laws, and related topics.
+        Always be empathetic, professional, and encourage users to seek professional legal advice when appropriate."""
+
+        # Create the user message
+        user_message = f"Please provide information about: {question}"
+
+        # Call OpenAI API
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message}
+            ],
+            max_tokens=500,
+            temperature=0.7
+        )
+
+        # Extract the answer
+        answer = response.choices[0].message.content.strip()
+        return answer
+
+    except Exception as e:
+        # Fallback response if OpenAI API fails
+        return f"I apologize, but I'm currently unable to provide a detailed answer to your question: '{question}'. Please try again later or consult with a legal professional for specific advice."
 
 @api_view(['POST'])
 def ask_ai(request):
@@ -368,6 +403,113 @@ def get_generated_document_detail(request, document_id):
         return Response(document_data)
     except GeneratedDocument.DoesNotExist:
         return Response({'error': 'Generated document not found'}, status=404)
+
+@api_view(['POST'])
+def submit_story(request):
+    """
+    Submit a new story and award points
+    """
+    try:
+        data = request.data
+        title = data.get('title')
+        content = data.get('content')
+
+        if not title or not content:
+            return Response({
+                'error': 'Both title and content are required'
+            }, status=400)
+
+        # Calculate points based on story length and content
+        word_count = len(content.split())
+        base_points = 50  # Base points for any story
+
+        # Bonus points for longer stories
+        if word_count > 500:
+            base_points += 30
+        elif word_count > 200:
+            base_points += 15
+
+        # Additional points for meaningful content
+        if any(keyword in content.lower() for keyword in ['empowerment', 'strength', 'courage', 'support', 'community']):
+            base_points += 20
+
+        # Get or create a default user for story submission
+        try:
+            user = User.objects.get(username='anonymous_user')
+        except User.DoesNotExist:
+            user = User.objects.create_user(
+                username='anonymous_user',
+                email='anonymous@example.com',
+                password='temp_password_123'
+            )
+
+        # Save the story to database
+        story = Story.objects.create(
+            user=user,
+            title=title,
+            content=content
+        )
+
+        # Update user rewards
+        try:
+            reward = Reward.objects.get(user=user)
+        except Reward.DoesNotExist:
+            reward = Reward.objects.create(user=user, points=0)
+
+        reward.add_points(base_points)
+
+        return Response({
+            'message': 'Story submitted successfully! Thank you for sharing your experience.',
+            'points': base_points,
+            'word_count': word_count,
+            'story_id': story.id
+        }, status=201)
+
+    except Exception as e:
+        return Response({
+            'error': 'Failed to submit story',
+            'details': str(e)
+        }, status=400)
+
+@api_view(['GET'])
+def get_rewards(request):
+    """
+    Get user rewards and history
+    """
+    try:
+        # In a real app, you would get the authenticated user
+        # For now, return mock data
+        rewards_data = {
+            'points': 150,
+            'history': [
+                {
+                    'id': 1,
+                    'description': 'Story submission bonus',
+                    'points': 50,
+                    'date': '2024-01-15'
+                },
+                {
+                    'id': 2,
+                    'description': 'Community participation',
+                    'points': 30,
+                    'date': '2024-01-10'
+                },
+                {
+                    'id': 3,
+                    'description': 'First story milestone',
+                    'points': 70,
+                    'date': '2024-01-05'
+                }
+            ]
+        }
+
+        return Response(rewards_data)
+
+    except Exception as e:
+        return Response({
+            'error': 'Failed to get rewards',
+            'details': str(e)
+        }, status=400)
 
 def home(request):
     """

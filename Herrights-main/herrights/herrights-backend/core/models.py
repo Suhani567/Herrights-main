@@ -1,7 +1,9 @@
 from django.db import models
+from django.contrib.auth.models import User
 
-# Create your models here.
-
+# -------------------
+# Law Model
+# -------------------
 class Law(models.Model):
     title = models.CharField(max_length=500)
     category = models.CharField(max_length=100)
@@ -21,6 +23,9 @@ class Law(models.Model):
     def __str__(self):
         return self.title
 
+# -------------------
+# Complaint Model
+# -------------------
 class Complaint(models.Model):
     COMPLAINT_TYPES = [
         ('Domestic Violence', 'Domestic Violence'),
@@ -84,9 +89,7 @@ class Complaint(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.complaint_id:
-            # Generate unique complaint ID
-            import random
-            import string
+            import random, string
             while True:
                 complaint_id = 'CMP' + ''.join(random.choices(string.digits, k=8))
                 if not Complaint.objects.filter(complaint_id=complaint_id).exists():
@@ -94,6 +97,9 @@ class Complaint(models.Model):
                     break
         super().save(*args, **kwargs)
 
+# -------------------
+# DocumentTemplate Model
+# -------------------
 class DocumentTemplate(models.Model):
     TEMPLATE_CATEGORIES = [
         ('complaints', 'Complaints'),
@@ -118,6 +124,9 @@ class DocumentTemplate(models.Model):
     def __str__(self):
         return self.title
 
+# -------------------
+# GeneratedDocument Model
+# -------------------
 class GeneratedDocument(models.Model):
     template = models.ForeignKey(DocumentTemplate, on_delete=models.CASCADE)
     user_data = models.JSONField()  # Store the form data used
@@ -133,12 +142,37 @@ class GeneratedDocument(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.document_id:
-            # Generate unique document ID
-            import random
-            import string
+            import random, string
             while True:
                 document_id = 'DOC' + ''.join(random.choices(string.digits, k=8))
                 if not GeneratedDocument.objects.filter(document_id=document_id).exists():
                     self.document_id = document_id
                     break
         super().save(*args, **kwargs)
+
+# -------------------
+# Story Model (User Shared Stories)
+# -------------------
+class Story(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    title = models.CharField(max_length=255)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.title}"
+
+# -------------------
+# Reward Model (User Points)
+# -------------------
+class Reward(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    points = models.IntegerField(default=0)
+    last_updated = models.DateTimeField(auto_now=True)
+
+    def add_points(self, pts):
+        self.points += pts
+        self.save()
+
+    def __str__(self):
+        return f"{self.user.username} - {self.points} points"
